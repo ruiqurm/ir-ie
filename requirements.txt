@@ -1,0 +1,4 @@
+pandas
+jieba
+tqdm
+scipy

@@ -1,0 +1,3 @@
+[submodule "LeCaRD"]
+	path = LeCaRD
+	url = https://github.com/myx666/LeCaRD.git
