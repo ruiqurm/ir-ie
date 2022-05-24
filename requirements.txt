@@ -2,3 +2,4 @@ pandas
 jieba
 tqdm
 scipy
+fastapi

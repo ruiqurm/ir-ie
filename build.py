@@ -9,28 +9,45 @@ import numpy as np
 from typing import Dict
 import sqlite3
 from scipy.sparse import lil_matrix
-
-con = sqlite3.connect("index.db")
-cur = con.cursor()
-cur.execute("""create table if not exists words( word_index int primary key,word varchar(256))""")
-cur.execute("""create table if not exists inverse_index(word_index int,document int,tfidf float,PRIMARY KEY (word_index,document))""")
-cur.execute("""create table if not exists dc(word_index int primary key,document_count int)""")
-con.commit()
-# 预处理数据
-data = []
-for directory, dirnames, filenames in os.walk(r'./data/candidates'):
-	for name in filenames:
-		json_file = os.path.join(directory, name)
-		data.append(json.load(open(json_file,encoding="utf-8")))
-data = pd.DataFrame(data)
-data = data[["qw"]].to_dict()["qw"]
-data = [data[i] for i in range(len(data.keys()))]
-document = data # 换个名字
-
-# 读取停用词
-with open("LeCaRD/data/others/stopword.txt",encoding="utf-8") as f:
+with open("data/stopword.txt",encoding="utf-8") as f:
 	stopwords = set(f.read().split("\n"))
 stopwords.add(" ")
+def insert_by_batch(con,command,array):
+	cur = con.cursor()
+	for batch in [array[i:i+2000] for i in range(len(array))[::2000]]:
+		cur.executemany(command,batch)
+	con.commit()
+def init(con):
+	cur = con.cursor()
+	cur.execute("""create table if not exists words( word_index int primary key,word varchar(256))""")
+	cur.execute("""create table if not exists inverse_index(word_index int,document int,tfidf float,PRIMARY KEY (word_index,document))""")
+	cur.execute("""create table if not exists dc(word_index int primary key,document_count int)""")
+	cur.execute("""create table if not exists cases( id integer primary key,qw text,writId varchar(64),path varchar(256))""")
+	con.commit()
+
+
+
+	charges = json.load(open("data/documents/common_charge.json",encoding="utf-8"))
+	query_related = {v for key in charges for v in charges[key][:100] if v.endswith(".json")}
+	with open("data/query.json",encoding="utf-8") as f:
+		for i in f.readlines():
+			t =  json.loads(i)
+			if t["path"].endswith(".json"):
+				query_related.add(t["path"])
+	data = []
+	for item in query_related:
+		obj = json.load(open("data/documents/documents/{}".format(item),encoding="utf-8"))
+		obj["path"] = item
+		data.append(obj)
+
+	going_inserted = [(index,i["qw"],i["writId"],i["path"]) for index,i in enumerate(data)]
+	insert_by_batch(con,"insert or ignore into cases values (?,?, ?,?)",going_inserted)
+	data = pd.DataFrame(data)
+	data = data[["qw","writId","path"]]
+	document = data["qw"].to_list()
+	print("读取数据完成")
+	return document
+
 
 # 定义结构体
 class Word:
@@ -50,7 +67,7 @@ def f(arg)->Dict[str,Word]:
 	return ret
 def init_process():
 	# 初始化进程
-	jieba.load_userdict('LeCaRD/data/others/criminal charges.txt')
+	jieba.load_userdict('data/criminal_charges.txt')
 def merge_list_of_dictionaries(dict_list):
 	# 合并进程数据
 	new_dict = defaultdict(list)
@@ -58,18 +75,24 @@ def merge_list_of_dictionaries(dict_list):
 		for key in d:
 			new_dict[key].append(d[key])
 	return new_dict
+	
+
 if __name__ == "__main__":
 	# 统计
-	with multiprocessing.Pool(8,initializer=init_process) as pool:
+	print("初始化")
+	con = sqlite3.connect("index.db")
+	document = init(con)
+	print("分词和统计")
+	with multiprocessing.Pool(4,initializer=init_process) as pool:
 		inverted_index = defaultdict(list)
 		result  = pool.map(f, enumerate(document))
 		result = list(tqdm.tqdm(pool.imap(f, enumerate(document)), total=len(document)))
 	result = merge_list_of_dictionaries(result)
 	words = list(result.keys())
-	cur.executemany("insert or ignore into words values (?, ?)",enumerate(words))
-	con.commit()
+	insert_by_batch(con,"insert or ignore into words values (?, ?)",[(i,k) for i,k in enumerate(words)])
 	print("计算idf")
-	
+	cur = con.cursor()
+
 	matrix = np.zeros((len(words),len(document)))
 	for i,key in enumerate(tqdm.tqdm(words)):
 		# construct matrix

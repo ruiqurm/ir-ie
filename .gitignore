@@ -2,3 +2,8 @@
 /__pycache__/
 *.db
 *.npz
+candidates1/*
+candidates2/*
+data/documents/*
+.vscode
+.gitignore
