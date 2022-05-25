@@ -11,6 +11,7 @@ import sqlite3
 from scipy import sparse
 from scipy.sparse.linalg import norm
 from typing import List,Tuple
+from fastapi.middleware.cors import CORSMiddleware
 
 """
 init
@@ -42,7 +43,7 @@ def get_documents_matrix(keys:list):
 	cur.execute(sql,l)
 	return np.array(list({i[0] for i in cur.fetchall()}))
 	
-def query(key:str,n:int=20):
+def query(key:str,n:int=5,ret_parse_key=False):
 	key_with_count = pd.Series(list(jieba.cut(key))).value_counts().to_dict()
 	_x = sparse.lil_matrix((len(words),1))
 	# 生成查询向量的tf-idf
@@ -56,30 +57,42 @@ def query(key:str,n:int=20):
 	m = matrix[docuement_to_query]
 	# 计算查询向量与文档向量的余弦相似度
 	cosine_distance = (m@x).toarray().flatten()/(norm(m,axis=1) * norm(x))
-	ind = np.argpartition(cosine_distance, -n)[-n:]
-	return docuement_to_query[ind[np.argsort(cosine_distance[ind])]]
 
-def get_documents(document_ids:int):
-	command = f"""select qw from cases where id in ({",".join(["?"]*len(document_ids))})"""
-	cur.execute(command,document_ids)
-	return [i[0] for i in cur.fetchall()]
+	ind = np.argpartition(cosine_distance, -n)[-n:] # ind -> cosine
+	unorder_result = cosine_distance[ind]
+	result_order = np.flip(np.argsort(unorder_result))
+	# print(ind[result_order])
+	# print(unorder_result[result_order])
+	# import pdb;pdb.set_trace()
+	doc_ids = docuement_to_query[ind[result_order]]
+	documents = get_documents(doc_ids)
+	result =  [{"id":int(i),"cosine_distance":float(j),"title":k[0],"fact":k[1],"verdict":k[2]} for i,j,k in zip(doc_ids,unorder_result[result_order],documents)]
+	if ret_parse_key:
+		return result,key_with_count.keys()
+	else:
+		return (result,)
 
-class DocumentKeywordPos:
-	def __init__(self,start:int,end:int):
-		self.start = start
-		self.end = end
-	def __repr__(self):
-		return f"{self.start}:{self.end}"
-def get_document_with_hightlight(document_ids,keys:List[str])->Tuple[str,List[DocumentKeywordPos]]:
-	re_expr = "|".join(["({})".format(re.escape(key)) for key in keys])
-	ret = []
-	for document in get_documents(document_ids):
-		ret.append((document,[DocumentKeywordPos(match.start(),match.end()) for match in re.finditer(re_expr, document)]))
-	return ret
+def get_documents(document_ids):
+	command = "select ajName as case_name,ajjbqk as basic_fact,cpfxgc||pjjg as court_verdict from cases where id in ({})"\
+				.format(",".join([str(i) for i in document_ids]))
+	cur.execute(command)
+	return cur.fetchall()
 
 app = FastAPI()
 
+origins = ["*"]
+ 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 @app.get("/query")
-async def q(key:str,n:int=20):
-    result = query(key,n)
-    return result
+async def q(key:str,n:int=10):
+	result,key = query(key,n,ret_parse_key=True)
+
+	return {"result":result,"keys":list(key)}

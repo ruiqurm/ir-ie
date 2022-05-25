@@ -1,7 +1,9 @@
 ## 环境
-
+* 需预先安装node,vue,python3
 ```
 pip install -r requirements.txt
+cd search
+npm install
 ```
 
 
@@ -11,6 +13,14 @@ pip install -r requirements.txt
 生成倒排索引
 
 ```
-python construct_inverse_index.py
+python build.py
 ```
+
+启动服务器
+```
+uvicorn main:app --reload
+npm run dev
+```
+
+在localhost:8080下面启动网页
 

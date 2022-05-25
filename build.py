@@ -22,7 +22,7 @@ def init(con):
 	cur.execute("""create table if not exists words( word_index int primary key,word varchar(256))""")
 	cur.execute("""create table if not exists inverse_index(word_index int,document int,tfidf float,PRIMARY KEY (word_index,document))""")
 	cur.execute("""create table if not exists dc(word_index int primary key,document_count int)""")
-	cur.execute("""create table if not exists cases( id integer primary key,qw text,writId varchar(64),path varchar(256))""")
+	cur.execute("""create table if not exists cases( id int primary key,ajName text,ajjbqk text,cpfxgc text,pjjg text,writName text,writId varchar(64),path varchar(256))""")
 	con.commit()
 
 
@@ -39,11 +39,17 @@ def init(con):
 		obj = json.load(open("data/documents/documents/{}".format(item),encoding="utf-8"))
 		obj["path"] = item
 		data.append(obj)
-
-	going_inserted = [(index,i["qw"],i["writId"],i["path"]) for index,i in enumerate(data)]
-	insert_by_batch(con,"insert or ignore into cases values (?,?, ?,?)",going_inserted)
+	going_inserted = [(index,
+				  i.get("ajName",""),
+				  i.get("ajjbqk",""),
+				  i.get("cpfxgc",""),
+				  i.get("pjjg",""),
+				  i.get("writName",""),
+				  i["writId"],
+				  i["path"]) for index,i in enumerate(data)]
+	insert_by_batch(con,"insert or ignore into cases values (?,?,?,?,?,?,?,?)",going_inserted)
 	data = pd.DataFrame(data)
-	data = data[["qw","writId","path"]]
+	# data = data[["qw"]]
 	document = data["qw"].to_list()
 	print("读取数据完成")
 	return document
